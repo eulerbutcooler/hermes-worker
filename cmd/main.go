@@ -19,7 +19,7 @@ func main() {
 		log.Fatalf("Failed to start NATS consumer: %v", err)
 	}
 	consumer.Start()
-	sigChan:=make(chan,os.Signal,1)
+	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 	<-sigChan
 	log.Println("Shutting down worker...")
