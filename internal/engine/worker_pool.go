@@ -2,7 +2,6 @@ package engine
 
 import (
 	"context"
-	"errors"
 	"log"
 	"sync"
 
@@ -59,19 +58,26 @@ func (wp *WorkerPool) worker(ctx context.Context, id int) {
 	}
 }
 
-func (wp *WorkerPool) process(ctx context.Context, job Job) error {
-	instruction, err := wp.Store.GetRelayInstructions(ctx, job.RelayID)
-	if err != nil {
-		if errors.Is(err, store.ErrRelayNotFound) {
-			log.Printf("Dropping event for unknown/inactive relay: %s", job.RelayID)
-			return nil
+func (wp *WorkerPool) process(ctx context.Context, job Job) (err error) {
+	status := "success"
+	details := "Relay executed successfully"
+	defer func() {
+		if err != nil {
+			status = "failed"
+			details = err.Error()
 		}
-		return err
+		logErr := wp.Store.LogExecution(context.Background(), job.RelayID, status, details)
+		if logErr != nil {
+			log.Printf("Failed to save execution log: %v", logErr)
+		}
+	}()
+	instruction, fetchErr := wp.Store.GetRelayInstructions(ctx, job.RelayID)
+	if fetchErr != nil {
+		return fetchErr
 	}
-	executor, err := wp.Registry.Get(instruction.ActionType)
-	if err != nil {
-		log.Printf("Unknown action type '%s' for relay %s. Dropping.", instruction.ActionType, job.RelayID)
-		return nil
+	executor, pluginErr := wp.Registry.Get(instruction.ActionType)
+	if pluginErr != nil {
+		return pluginErr
 	}
 	return executor.Execute(ctx, instruction.Config, job.Payload)
 }

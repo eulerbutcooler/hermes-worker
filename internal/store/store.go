@@ -50,3 +50,13 @@ func (s *Store) GetRelayInstructions(ctx context.Context, relayID string) (*Rela
 
 	return &ri, nil
 }
+
+func (s *Store) LogExecution(ctx context.Context, relayID string, status string, details string) error {
+	query := `INSERT INTO execution_logs(relay_id,status,details,executed_at)
+	VALUES($1,$2,$3, NOW())`
+	_, err := s.db.Exec(ctx, query, relayID, status, details)
+	if err != nil {
+		return fmt.Errorf("Failed to write execution log: %w", err)
+	}
+	return nil
+}
