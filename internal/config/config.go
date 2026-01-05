@@ -17,7 +17,7 @@ func LoadConfig() *Config {
 	}
 	dbURL := os.Getenv("DATABASE_URL")
 	if dbURL == "" {
-		dbURL = "postgres://user:password@loclahost:5432/hermes"
+		dbURL = "postgres://user:password@localhost:5432/hermes"
 	}
 
 	log.Printf("Loaded Config: NatsURL=%s", natsURL)

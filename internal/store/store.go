@@ -31,7 +31,7 @@ func NewStore(dbURL string) (*Store, error) {
 }
 
 func (s *Store) GetRelayInstructions(ctx context.Context, relayID string) (*RelayInstruction, error) {
-	query := `SELECT r.id a.action_type, a.config
+	query := `SELECT r.id, a.action_type, a.config
 	FROM relays r
 	JOIN relay_actions a ON r.id=a.relay_id
 	WHERE r.id=$1 AND r.active=true`
