@@ -45,7 +45,6 @@ func (c *Consumer) Start() error {
 }
 
 func (c *Consumer) handleMessage(msg *nats.Msg) {
-	msg.Ack()
 	type Event struct {
 		RelayID    string          `json:"relay_id"`
 		Payload    json.RawMessage `json:"payload"`
