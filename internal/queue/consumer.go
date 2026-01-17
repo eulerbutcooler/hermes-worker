@@ -3,7 +3,7 @@ package queue
 import (
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 	"time"
 
 	"github.com/eulerbutcooler/hermes-worker/internal/engine"
@@ -14,12 +14,18 @@ type Consumer struct {
 	js       nats.JetStream
 	sub      *nats.Subscription
 	jobQueue chan engine.Job
+	logger   *slog.Logger
 }
 
 // Constructor pattern
 // Initializes the NATS connection but doesnt start consuming right off
-func NewConsumer(url string, jobQueue chan engine.Job) (*Consumer, error) {
-	nc, err := nats.Connect(url, nats.MaxReconnects(10), nats.ReconnectWait(2))
+func NewConsumer(url string, jobQueue chan engine.Job, logger *slog.Logger) (*Consumer, error) {
+	logger.Info("connecting to NATS", slog.String("url", url))
+	nc, err := nats.Connect(url, nats.MaxReconnects(10), nats.ReconnectWait(2), nats.DisconnectErrHandler(func(nc *nats.Conn, err error) {
+		logger.Warn("NATS disconnected", slog.String("error", err.Error()), nats.ReconnectHandler(func(c *nats.Conn) {
+			logger.Info("NATS reconnected")
+		}))
+	}))
 	if err != nil {
 		return nil, fmt.Errorf("nats connect error: %w", err)
 	}
@@ -27,6 +33,7 @@ func NewConsumer(url string, jobQueue chan engine.Job) (*Consumer, error) {
 	if err != nil {
 		return nil, fmt.Errorf("jetsream init error: %w", err)
 	}
+	logger.Info("connected to NATS JetStream")
 	return &Consumer{
 		js:       js,
 		jobQueue: jobQueue,
@@ -35,12 +42,19 @@ func NewConsumer(url string, jobQueue chan engine.Job) (*Consumer, error) {
 
 // Consumes the messages by subscibing to NATS and processing messages async
 func (c *Consumer) Start() error {
-	sub, err := c.js.Subscribe("events.>", c.handleMessage, nats.Durable("WORKER_CONSUMER"), nats.ManualAck(), nats.AckWait(30*time.Second))
+	c.logger.Info("starting NATS consumer",
+		slog.String("subject", "events.>"),
+		slog.String("consumer", "WORKER_CONSUMER"))
+	sub, err := c.js.Subscribe("events.>",
+		c.handleMessage,
+		nats.Durable("WORKER_CONSUMER"),
+		nats.ManualAck(),
+		nats.AckWait(30*time.Second))
 	if err != nil {
 		return fmt.Errorf("subscription failed: %w", err)
 	}
 	c.sub = sub
-	log.Printf("Worker consumer started, listening for events...")
+	c.logger.Info("Worker consumer started, listening for events...")
 	return nil
 }
 
@@ -52,12 +66,14 @@ func (c *Consumer) handleMessage(msg *nats.Msg) {
 	}
 	var evt Event
 	if err := json.Unmarshal(msg.Data, &evt); err != nil {
-		log.Printf("Error parsing JSON: %v", err)
+		c.logger.Error("failed to parse message",
+			slog.String("error", err.Error()))
 		msg.Nak()
 		return
 	}
-	log.Printf("Received event for relay: %s", evt.RelayID)
-
+	c.logger.Debug("received event",
+		slog.String("realy_id", evt.RelayID),
+		slog.Int("payload_size", len(evt.Payload)))
 	// Bridges NATS consumer to Worker Pool
 	job := engine.Job{
 		RelayID: evt.RelayID,
@@ -65,10 +81,10 @@ func (c *Consumer) handleMessage(msg *nats.Msg) {
 		MsgAck: func(success bool) {
 			if success {
 				msg.Ack()
-				log.Printf("Acknowledged message for relay: %s", evt.RelayID)
+				c.logger.Debug("acknowledged message", slog.String("realy_id", evt.RelayID))
 			} else {
 				msg.Nak()
-				log.Printf("Nacked message for relay %s (requeued the message for retry)", evt.RelayID)
+				c.logger.Warn("nacked message (will retry)", slog.String("realy_id", evt.RelayID))
 			}
 		},
 	}
@@ -77,6 +93,7 @@ func (c *Consumer) handleMessage(msg *nats.Msg) {
 }
 
 func (c *Consumer) Stop() error {
+	c.logger.Info("stopping NATS consumer")
 	if c.sub != nil {
 		// To process remaining messages and then close
 		return c.sub.Drain()

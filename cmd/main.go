@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"log"
+	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
@@ -11,44 +12,70 @@ import (
 	"github.com/eulerbutcooler/hermes-worker/internal/engine"
 	"github.com/eulerbutcooler/hermes-worker/internal/integrations/debug"
 	"github.com/eulerbutcooler/hermes-worker/internal/integrations/discord"
+	"github.com/eulerbutcooler/hermes-worker/internal/logger"
 	"github.com/eulerbutcooler/hermes-worker/internal/queue"
 	"github.com/eulerbutcooler/hermes-worker/internal/store"
 )
 
 func main() {
 	cfg := config.LoadConfig()
+	if err := cfg.Validate(); err != nil {
+		log.Fatalf("Invalid configuration: %v", err)
+	}
+
+	loggerCfg := logger.Config{
+		Level:       logger.LogLevel(cfg.LogLevel),
+		ServiceName: "hermes-worker",
+		Environment: cfg.Environment,
+		Pretty:      cfg.LogPretty,
+	}
+
+	appLogger := logger.New(loggerCfg)
+	appLogger.Info("starting Hermes Worker",
+		slog.String("version", "1.0.0"),
+		slog.String("environment", cfg.Environment),
+	)
+
 	db, err := store.NewStore(cfg.DbURL)
 	if err != nil {
-		log.Fatalf("DB Init Error: %v", err)
+		appLogger.Error("database initialization failed", slog.String("error", err.Error()))
+		os.Exit(1)
 	}
-	log.Printf("DB Connected")
+	appLogger.Info("database connected")
 
 	//Registry Pattern
 	// Registering integrations instead of hardcoding
 	reg := engine.NewRegistry()
 	reg.Register("debug_log", debug.New())
 	reg.Register("discord_send", discord.New())
-	log.Println("Integrations loaded: debug_log, discord_send")
+	appLogger.Info("integrations loaded",
+		slog.Int("count", 2),
+		slog.Any("types", []string{"debug_log", "discord_send"}),
+	)
 
-	pool := engine.NewWorkerPool(10, db, reg)
+	pool := engine.NewWorkerPool(10, db, reg, appLogger)
 	ctx, cancel := context.WithCancel(context.Background())
 	pool.Start(ctx)
 
-	consumer, err := queue.NewConsumer(cfg.NatsURL, pool.JobQueue)
+	consumer, err := queue.NewConsumer(cfg.NatsURL, pool.JobQueue, appLogger)
 	if err != nil {
-		log.Fatalf("NATS Init Error: %v", err)
+		appLogger.Error("NATS consumer creation failed", slog.String("error", err.Error()))
+		os.Exit(1)
 	}
 	if err := consumer.Start(); err != nil {
-		log.Fatalf("Failed to start consumer: %v", err)
+		appLogger.Error("failed to start consumer", slog.String("error", err.Error()))
+		os.Exit(1)
 	}
+	appLogger.Info("Hermes Worker is running", slog.String("status", "ready"))
+
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 	<-sigChan
+	appLogger.Info("shutdown signal received, initiating graceful shutdown")
 	if err := consumer.Stop(); err != nil {
-		log.Printf("Error stopping consumer: %v", err)
+		appLogger.Error("error stopping consumer", slog.String("error", err.Error()))
 	}
-	log.Println("Shutting down worker...")
 	cancel()
 	pool.Shutdown()
-	log.Println("Worker stoppped gracefully")
+	appLogger.Info("Worker stoppped gracefully")
 }
