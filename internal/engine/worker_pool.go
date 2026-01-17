@@ -65,7 +65,7 @@ func (wp *WorkerPool) worker(ctx context.Context, id int) {
 		case job := <-wp.JobQueue:
 			start := time.Now()
 			workerLogger.Info("processing relay", slog.String("relay_id", job.RelayID))
-			err := wp.process(wp.ctx, job)
+			err := wp.process(wp.ctx, job, workerLogger)
 			duration := time.Since(start)
 			if err != nil {
 				workerLogger.Error("relay execution failed", slog.String("relay_id", job.RelayID),
