@@ -47,7 +47,7 @@ func LoadConfig() *Config {
 		Environment:  getEnv("ENV", "development"),
 		NatsURL:      getEnv("NATS_URL", "nats://localhost:4222"),
 		DbURL:        getEnv("DATABASE_URL", "postgres://user:password@localhost:5432/hermes"),
-		MaxWorkers:   getEnvInt("MAX+WORKERS", 10),
+		MaxWorkers:   getEnvInt("MAX_WORKERS", 10),
 		JobQueueSize: getEnvInt("JOB_QUEUE_SIZE", 100),
 		LogLevel:     getEnv("LOG_LEVEL", "INFO"),
 	}
