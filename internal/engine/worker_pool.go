@@ -2,7 +2,7 @@ package engine
 
 import (
 	"context"
-	"log"
+	"log/slog"
 	"sync"
 	"time"
 
@@ -20,51 +20,59 @@ type WorkerPool struct {
 	MaxWorkers int
 	Store      *store.Store
 	Registry   *Registry
+	Logger     *slog.Logger
 	wg         sync.WaitGroup
 	ctx        context.Context
 	cancel     context.CancelFunc
 }
 
 // Constructor with dependency injxtn
-func NewWorkerPool(maxWorkers int, db *store.Store, reg *Registry) *WorkerPool {
+func NewWorkerPool(maxWorkers int, db *store.Store, reg *Registry, logger *slog.Logger) *WorkerPool {
 	return &WorkerPool{
 		JobQueue:   make(chan Job, 100),
 		MaxWorkers: maxWorkers,
 		Store:      db,
 		Registry:   reg,
+		Logger:     logger,
 	}
 }
 
 // Spaws all worker goroutines
 func (wp *WorkerPool) Start(ctx context.Context) {
 	wp.ctx, wp.cancel = context.WithCancel(ctx)
-	log.Printf("Starting worker pool with %d workers", wp.MaxWorkers)
+	wp.Logger.Info("starting worker pool",
+		slog.Int("max_workers", wp.MaxWorkers),
+		slog.Int("queue_size", cap(wp.JobQueue)),
+	)
 	for i := 0; i < wp.MaxWorkers; i++ {
 		wp.wg.Add(1)
 		go wp.worker(ctx, i)
 	}
-	log.Printf("All %d workers started and ready", wp.MaxWorkers)
+	wp.Logger.Info("worker pool started",
+		slog.Int("workers", wp.MaxWorkers))
 }
 
 // Each worker runs its own goroutine
 func (wp *WorkerPool) worker(ctx context.Context, id int) {
 	defer wp.wg.Done()
-	log.Printf("Worker %d started", id)
+	workerLogger := wp.Logger.With(slog.Int("worker_id", id))
+	workerLogger.Debug("worker started")
 	for {
 		select {
 		case <-wp.ctx.Done():
-			log.Printf("Worker %d shutting down", id)
+			workerLogger.Info("worker shutting down")
 			return
 		case job := <-wp.JobQueue:
 			start := time.Now()
-			log.Printf("Worker %d processing relay %s", id, job.RelayID)
+			workerLogger.Info("processing relay", slog.String("relay_id", job.RelayID))
 			err := wp.process(wp.ctx, job)
 			duration := time.Since(start)
 			if err != nil {
-				log.Printf("Worker %d failed relay %s in %v: %v", id, job.RelayID, duration, err)
+				workerLogger.Error("relay execution failed", slog.String("relay_id", job.RelayID),
+					slog.Duration("duration", duration), slog.String("error", err.Error()))
 				job.MsgAck(false)
 			} else {
-				log.Printf("Worker %d finished relay %s in %v", id, job.RelayID, duration)
+				workerLogger.Info("relay execution succeeded", slog.String("relay_id", job.RelayID), slog.Duration("duration", duration))
 				job.MsgAck(true)
 			}
 		}
@@ -72,7 +80,7 @@ func (wp *WorkerPool) worker(ctx context.Context, id int) {
 }
 
 // Executes the actual workflow logic
-func (wp *WorkerPool) process(ctx context.Context, job Job) (err error) {
+func (wp *WorkerPool) process(ctx context.Context, job Job, logger *slog.Logger) (err error) {
 	status := "success"
 	details := "Relay executed successfully"
 	defer func() {
@@ -82,30 +90,33 @@ func (wp *WorkerPool) process(ctx context.Context, job Job) (err error) {
 		}
 		logErr := wp.Store.LogExecution(context.Background(), job.RelayID, status, details)
 		if logErr != nil {
-			log.Printf("Failed to save execution log: %v", logErr)
+			logger.Error("failed to save execution log", slog.String("error", logErr.Error()))
 		}
 	}()
+	logger.Debug("fetching relay instructions", slog.String("realy_id", job.RelayID))
 
 	instruction, fetchErr := wp.Store.GetRelayInstructions(ctx, job.RelayID)
 	if fetchErr != nil {
 		return fetchErr
 	}
 
+	logger.Debug("fetched relay instructions", slog.String("action_type", instruction.ActionType))
+
 	executor, pluginErr := wp.Registry.Get(instruction.ActionType)
 	if pluginErr != nil {
 		return pluginErr
 	}
-
+	logger.Debug("execution instruction", slog.String("action_type", instruction.ActionType))
 	return executor.Execute(ctx, instruction.Config, job.Payload)
 }
 
 func (wp *WorkerPool) Shutdown() {
-	log.Printf("Initializing worker pool shutdown")
+	wp.Logger.Info("Initializing worker pool shutdown")
 
 	if wp.cancel != nil {
 		wp.cancel()
 	}
 	close(wp.JobQueue)
 	wp.wg.Wait()
-	log.Printf("Worker pool shutdown complete")
+	wp.Logger.Info("Worker pool shutdown complete")
 }
