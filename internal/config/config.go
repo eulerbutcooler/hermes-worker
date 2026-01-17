@@ -50,7 +50,6 @@ func LoadConfig() *Config {
 		MaxWorkers:   getEnvInt("MAX+WORKERS", 10),
 		JobQueueSize: getEnvInt("JOB_QUEUE_SIZE", 100),
 		LogLevel:     getEnv("LOG_LEVEL", "INFO"),
-		LogPretty:    getEnvBool("LOG_PRETTY", true),
 	}
 	log.Printf("Loaded Config: Environment: %s, MaxWorkers: %d", cfg.Environment, cfg.MaxWorkers)
 	return cfg
