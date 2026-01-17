@@ -8,11 +8,11 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/eulerbutcooler/hermes-common/pkg/logger"
 	"github.com/eulerbutcooler/hermes-worker/internal/config"
 	"github.com/eulerbutcooler/hermes-worker/internal/engine"
 	"github.com/eulerbutcooler/hermes-worker/internal/integrations/debug"
 	"github.com/eulerbutcooler/hermes-worker/internal/integrations/discord"
-	"github.com/eulerbutcooler/hermes-worker/internal/logger"
 	"github.com/eulerbutcooler/hermes-worker/internal/queue"
 	"github.com/eulerbutcooler/hermes-worker/internal/store"
 )
@@ -23,14 +23,7 @@ func main() {
 		log.Fatalf("Invalid configuration: %v", err)
 	}
 
-	loggerCfg := logger.Config{
-		Level:       logger.LogLevel(cfg.LogLevel),
-		ServiceName: "hermes-worker",
-		Environment: cfg.Environment,
-		Pretty:      cfg.LogPretty,
-	}
-
-	appLogger := logger.New(loggerCfg)
+	appLogger := logger.New("hermes-worker", cfg.Environment, cfg.LogLevel)
 	appLogger.Info("starting Hermes Worker",
 		slog.String("version", "1.0.0"),
 		slog.String("environment", cfg.Environment),
