@@ -15,9 +15,11 @@ import (
 	"github.com/eulerbutcooler/hermes-worker/internal/integrations/discord"
 	"github.com/eulerbutcooler/hermes-worker/internal/queue"
 	"github.com/eulerbutcooler/hermes-worker/internal/store"
+	"github.com/joho/godotenv"
 )
 
 func main() {
+	_ = godotenv.Load()
 	cfg := config.LoadConfig()
 	if err := cfg.Validate(); err != nil {
 		log.Fatalf("Invalid configuration: %v", err)

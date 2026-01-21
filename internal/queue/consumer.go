@@ -37,6 +37,7 @@ func NewConsumer(url string, jobQueue chan engine.Job, logger *slog.Logger) (*Co
 	return &Consumer{
 		js:       js,
 		jobQueue: jobQueue,
+		logger:   logger,
 	}, nil
 }
 
@@ -72,7 +73,7 @@ func (c *Consumer) handleMessage(msg *nats.Msg) {
 		return
 	}
 	c.logger.Debug("received event",
-		slog.String("realy_id", evt.RelayID),
+		slog.String("relay_id", evt.RelayID),
 		slog.Int("payload_size", len(evt.Payload)))
 	// Bridges NATS consumer to Worker Pool
 	job := engine.Job{
@@ -81,10 +82,10 @@ func (c *Consumer) handleMessage(msg *nats.Msg) {
 		MsgAck: func(success bool) {
 			if success {
 				msg.Ack()
-				c.logger.Debug("acknowledged message", slog.String("realy_id", evt.RelayID))
+				c.logger.Debug("acknowledged message", slog.String("relay_id", evt.RelayID))
 			} else {
 				msg.Nak()
-				c.logger.Warn("nacked message (will retry)", slog.String("realy_id", evt.RelayID))
+				c.logger.Warn("nacked message (will retry)", slog.String("relay_id", evt.RelayID))
 			}
 		},
 	}

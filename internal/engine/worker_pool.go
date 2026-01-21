@@ -93,7 +93,7 @@ func (wp *WorkerPool) process(ctx context.Context, job Job, logger *slog.Logger)
 			logger.Error("failed to save execution log", slog.String("error", logErr.Error()))
 		}
 	}()
-	logger.Debug("fetching relay instructions", slog.String("realy_id", job.RelayID))
+	logger.Debug("fetching relay instructions", slog.String("relay_id", job.RelayID))
 
 	instruction, fetchErr := wp.Store.GetRelayInstructions(ctx, job.RelayID)
 	if fetchErr != nil {
